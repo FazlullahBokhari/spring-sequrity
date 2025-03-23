@@ -9,25 +9,41 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 @Component
 public class JwtUtils {
 
-    private static final Integer EXPIRATION_TIME = 10*60*60*60*60;
-
+    private static final long ACCESS_TOKEN_EXPIRATION = 10 * 60 * 1000; // 10 minutes
+    private static final long REFRESH_TOKEN_EXPIRATION = 7 * 24 * 60 * 60 * 1000; // 7 days
     private static final String SECRET = "faizjwt7@@@@@@@@@@@@@777777777777777777777777777777777777";
 
-    public String generateToken(User user) {
+    private Key getSecretKey() {
+        return Keys.hmacShaKeyFor(SECRET.getBytes());
+    }
+
+
+    public String generateAccessToken(User user) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("roles", user.getRoles());
+        return createToken(claims, user.getUsername(), ACCESS_TOKEN_EXPIRATION);
+    }
+
+
+    public String generateRefreshToken(User user) {
+        return createToken(new HashMap<>(), user.getUsername(), REFRESH_TOKEN_EXPIRATION);
+    }
+
+    private String createToken(Map<String, Object> claims, String username, long expirationTime) {
         return Jwts.builder()
-                .setSubject(user.getUsername())
-                .claim("roles", user.getRoles())
+                .setClaims(claims)
+                .setSubject(username)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis()+EXPIRATION_TIME))
-                .signWith(getSecretKey(),SignatureAlgorithm.HS256)
+                .setExpiration(new Date(System.currentTimeMillis() + expirationTime))
+                .signWith(getSecretKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
+
 
     public Claims extractClaims(String token) {
         return Jwts.parserBuilder()
@@ -37,29 +53,36 @@ public class JwtUtils {
                 .getBody();
     }
 
-    public List getRoles(String token) {
-        Claims claims = extractClaims(token);
-        return claims.get("roles", List.class);
+
+    public Set getRoles(String token) {
+        return extractClaims(token).get("roles", Set.class);
     }
+
 
     public String getUsername(String token) {
         return extractClaims(token).getSubject();
     }
 
+
     public Date getExpirationDate(String token) {
         return extractClaims(token).getExpiration();
     }
+
 
     public boolean isTokenExpired(String token) {
         return getExpirationDate(token).before(new Date());
     }
 
+
     public boolean validateToken(String token, UserDetails userDetails) {
         return !isTokenExpired(token) && getUsername(token).equals(userDetails.getUsername());
     }
 
-    public Key getSecretKey(){
-        return Keys.hmacShaKeyFor(SECRET.getBytes());
-    }
 
+    public String refreshAccessToken(String refreshToken, UserDetails userDetails) {
+        if (validateToken(refreshToken, userDetails)) {
+            return generateAccessToken((User) userDetails);
+        }
+        return null;
+    }
 }
